@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:my_fund/database_helper.dart';
+import 'package:my_fund/transaction_screen.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -16,23 +18,16 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen>{
-  num total_income = 0.0;
+  late Future<double> total_income;
+  late Future<double> total_expenses;
+
 
   void initState(){
     super.initState();
-    someFunction();
-  }
-
-  void someFunction() async{
-    total_income = await DatabaseHelper().getTotalIncomeForCurrentMonth() as double;
-    print('total_income $total_income');
-    List<Map<String, dynamic>> transactions = await DatabaseHelper().getTransaction();
-    for (var transaction in transactions) {
-      print(transaction);  // This will print each transaction map
-    }
+    total_income = DatabaseHelper().getTotalIncomeForCurrentMonth();
+    total_expenses = DatabaseHelper().getTotalExpensesForCurrentMonth();
 
   }
-
 
 
   TooltipBehavior _tooltip = TooltipBehavior(enable: true);
@@ -63,87 +58,163 @@ class _DashboardScreenState extends State<DashboardScreen>{
             ),
           ),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildOverviewCard('Total Income', '$total_income', Icons.monetization_on, Colors.blue),
-              _buildOverviewCard('Total Expenses', '3200', Icons.shopping_cart, Colors.red),
-              _buildOverviewCard('Net Saving', '1800', Icons.savings, Colors.green),
-            ],
-          ),
+          Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FutureBuilder(
+                            future: total_income,
+                            builder: (context, incomeSanpshot){
+                              if(incomeSanpshot.connectionState == ConnectionState.waiting){
+                                return Center(child: CircularProgressIndicator());
+                              }else if(incomeSanpshot.hasError){
+                                return Text("Error : ${incomeSanpshot.error}");
+                              }else if(incomeSanpshot.hasData) {
+                                double totalIncome = incomeSanpshot.data ?? 0.0;
+                                return _buildOverviewCard('Total Income', totalIncome.toStringAsFixed(2), Icons.monetization_on,Colors.blue);
+                              }else {
+                                return Text("No Data Available");
+                              }
+                            }),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                height: 250,
-                width: 200,
-                child: PieChart(
-                    PieChartData(
-                      sections: getSections(),
-                      centerSpaceRadius: 50,
-                      sectionsSpace: 3,
-                    )
+                        FutureBuilder(
+                            future: total_expenses,
+                            builder: (context,expensesSnapshot){
+                              if(expensesSnapshot.connectionState == ConnectionState.waiting){
+                                return Center(child: CircularProgressIndicator(),);
+                              }else if(expensesSnapshot.hasError){
+                                return Text("Error: ${expensesSnapshot.error}");
+                              }else if(expensesSnapshot.hasData){
+                                double totalExpenses = expensesSnapshot.data ?? 0.0;
+                                return _buildOverviewCard('Total Expenses', totalExpenses.toStringAsFixed(2), Icons.shopping_cart, Colors.red);
+                              }else{
+                                return Text("No Data Available");
+                              }
+                            }),
+                        FutureBuilder(
+                            future: Future.wait([total_income,total_expenses]),
+                            builder: (context,snapshot){
+                              if(snapshot.connectionState == ConnectionState.waiting){
+                                return Center(child: CircularProgressIndicator(),);
+                              }else if(snapshot.hasError){
+                                return Text('Error : ${snapshot.error}');
+                              }else if(snapshot.hasData) {
+                                double totalIncome = snapshot.data![0];
+                                double totalExpenses = snapshot.data![1];
+                                double totalSaving = totalIncome - totalExpenses;
+                                return _buildOverviewCard('Net Saving', totalSaving.toStringAsFixed(2), Icons.savings, Colors.green);
+                              }else {
+                                return Text('No data Available');
+                              }
+                            }),
+                      ],
+                    ),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          height: 250,
+                          width: 200,
+                          child: FutureBuilder(
+                              future: Future.wait([total_income,total_expenses]),
+                              builder: (context,snapshot){
+                                if(snapshot.connectionState == ConnectionState.waiting){
+                                  return Center(child: CircularProgressIndicator(),);
+                                }else if(snapshot.hasError){
+                                  return Text('Error : ${snapshot.error}');
+                                }else if(snapshot.hasData){
+                                  double totalIncome = snapshot.data![0];
+                                  double totalExpenses = snapshot.data![1];
+                                  double totalSaving = totalIncome - totalExpenses;
+                                  return PieChart(
+                                      PieChartData(
+                                        sections: getSections(totalIncome,totalExpenses,totalSaving),
+                                        centerSpaceRadius: 50,
+                                        sectionsSpace: 3,
+                                      )
+                                  );
+                                }else {
+                                  return Text('No Data Available');
+                                }
+                              }),
+
+                        ),
+                        SizedBox(width: 10,),
+                        Column(
+
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            PieLegends('Net Savings', Colors.green),
+                            SizedBox(height: 5,),
+                            PieLegends('Total Expenses', Colors.red),
+
+                          ],
+                        )
+                      ],
+                    ),
+
+                    SizedBox(height: 5,),
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.only(left: 8.0,right: 8.0),
+                      margin: EdgeInsets.only(bottom: 5),
+                      child: Text('Recent Transactions',
+                        style: TextStyle(fontSize: 20,fontWeight: FontWeight.bold),),
+                    ),
+
+                    FutureBuilder(
+                        future: DatabaseHelper().getLastFiveTransactions(),
+                        builder: (context,snapshot){
+                          if(snapshot.connectionState == ConnectionState.waiting){
+                            return Center(child: CircularProgressIndicator(),);
+                          }
+                          else if( snapshot.hasError){
+                            return Center(child: Text("error: ${snapshot.error}"),);
+                          } else if(snapshot.hasData){
+                            // Extract data from the snapshot
+                            List<Map<String, dynamic>> data = snapshot.data!;
+
+                            return ListView.builder(
+                              shrinkWrap: true,
+                              physics: NeverScrollableScrollPhysics(),
+                              itemCount: data.length,
+                              itemBuilder: (context, index){
+                                String categoryName = data[index]['category_name'];
+                                String subcategoryName = data[index]['subcategory_name'];
+                                String note = data[index]['notes'];
+                                String date = data[index]['date'];
+                                date = formatDate(date);
+                                String amount = data[index]['amount'].toString();
+                                String type = data[index]['type'];
+                                Color color = type == 'Income' ? Colors.green : Colors.red;
+                                amount = type == 'Income' ? '+$amount' : '-$amount';
+
+                                return buildTransactionTile(categoryName,subcategoryName, date, amount, note, color);
+
+                              },
+                            );
+
+                          }else{
+                            return (Center(child: Text("No Data Available"),));
+                          }
+                        }),
+
+                  ],
                 ),
-              ),
-              SizedBox(width: 10,),
-              Column(
+              ),),
 
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  PieLegends('Net Savings', Colors.green),
-                  SizedBox(height: 5,),
-                  PieLegends('Total Expenses', Colors.red),
 
-                ],
-              )
-            ],
-          ),
-          SizedBox(height: 5,),
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.only(left: 8.0,right: 8.0),
-            margin: EdgeInsets.only(bottom: 5),
-            child: Text('Recent Transactions',
-              style: TextStyle(fontSize: 20,fontWeight: FontWeight.bold),),
-          ),
-          Flexible(
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                buildTransactionTile("Grocery Shopping", 'Food', 'Oct 24, 2023', '-150', Colors.red),
-                buildTransactionTile("Electricity Bill", 'Bills', 'Oct 25, 2023', '-70', Colors.red),
-                buildTransactionTile("Grocery Shopping", 'Food', 'Oct 24, 2023', '-150', Colors.red),
-
-              ],
-            ),
-          )
         ],
       );
   }
 
 }
 
-Widget _piechart(List <_ChartData> data, TooltipBehavior _tooltip){
-  return SfCircularChart(
-      tooltipBehavior: _tooltip,
-      series: <CircularSeries<_ChartData, String>>[
-        DoughnutSeries<_ChartData, String>(
-          dataSource: data,
-          xValueMapper: (_ChartData data, _)=> data.x,
-          yValueMapper: (_ChartData data, _)=> data.y,
-          name: 'Gold',
-        )
-      ]
-  );
-}
-
-class _ChartData {
-  _ChartData(this.x,this.y);
-  final String x;
-  final double y;
-}
 
 Widget _buildOverviewCard(String title, String amount, IconData icon, Color color){
   List<String> strings = title.split(" ");
@@ -176,20 +247,19 @@ Widget _buildOverviewCard(String title, String amount, IconData icon, Color colo
 
 String formatNumber(String number){
   double num = double.parse(number);
-  final formatter = NumberFormat('#,###.##');
+  final formatter = NumberFormat('#,###');
+  print('format : ${formatter.format(num)}');
   return formatter.format(num);
 }
 
-List<PieChartSectionData> getSections(){
-  var totalSalary =5000.0;
-  var totalExpenses = 3200.0;
-  var netSavings = 1800.0;
+List<PieChartSectionData> getSections(double totalIncome, double totalExpenses,double netSavings){
+
   return[
     // Section for Expenses
     PieChartSectionData(
       color: Colors.red,
       value: totalExpenses,
-      title: '${((totalExpenses / totalSalary) * 100).toStringAsFixed(1)}%',
+      title: '${((totalExpenses / totalIncome) * 100).toStringAsFixed(1)}%',
       radius: 50,
       titleStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold,color:Colors.white),
     ),
@@ -197,7 +267,7 @@ List<PieChartSectionData> getSections(){
     PieChartSectionData(
       color: Colors.green,
       value: netSavings,
-      title: '${((netSavings / totalSalary) * 100).toStringAsFixed(1)}%',
+      title: '${((netSavings / totalIncome) * 100).toStringAsFixed(1)}%',
       radius: 50,
       titleStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold,color: Colors.white),
 
@@ -221,20 +291,25 @@ Widget PieLegends(String title, Color color){
   );
 }
 
-Widget buildTransactionTile(String title, String category, String date, String amount, Color color){
+Widget buildTransactionTile(String category, String subcategory, String date, String amount, String note, Color color){
+  IconData icon = getIcon(category);
   return Padding(padding: EdgeInsets.all(10.0),
     child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      mainAxisAlignment: MainAxisAlignment.start,
       children: [
+        Icon(icon,color: Colors.blue,),
+        SizedBox(width: 16,),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,style: TextStyle(fontSize: 18,fontWeight: FontWeight.bold),),
+            Text(category,style: TextStyle(fontSize: 18,fontWeight: FontWeight.bold),),
             SizedBox(height: 4,),
-            Text(category,style: TextStyle(fontSize: 14,color: Colors.grey),),
+            Text(subcategory,style: TextStyle(fontSize: 14,color: Colors.grey),),
             Text(date,style: TextStyle(fontSize: 14,color: Colors.grey),),
+            Text(note,style: TextStyle(fontSize:12,color: Colors.grey),),
           ],
         ),
+        Spacer(),
         Text(amount,style: TextStyle(fontSize: 18,fontWeight: FontWeight.bold,color: color),),
       ],
     ),
@@ -272,4 +347,12 @@ editSalaryPanelDialog(BuildContext context){
   showDialog(context: context, builder: (BuildContext context){
     return salaryDialog;
   });
+}
+
+String formatDate(String date){
+  // Parse the date string
+  DateTime parsedDate = DateFormat("dd-MM-yyyy").parse(date);
+  // Format the parsed date into "dd MMMM, yyyy"
+  String formattedDate = DateFormat("dd MMMM, yyyy").format(parsedDate);
+  return formattedDate;
 }

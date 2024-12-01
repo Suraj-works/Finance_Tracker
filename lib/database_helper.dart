@@ -19,8 +19,8 @@ class DatabaseHelper {
 
   DatabaseHelper._privateConstructor();
 
-  Future<Database> get database async{
-    if(_database != null) return _database!;
+  Future<Database> get database async {
+    if (_database != null) return _database!;
     _database = await _initDatabase();
     return _database!;
   }
@@ -30,10 +30,11 @@ class DatabaseHelper {
     // Check if the database exists in the app's document directory
     bool dbExists = await databaseExists(path);
 
-    if(!dbExists){
+    if (!dbExists) {
       // if the database does not exist, copy it from the assets folder
       ByteData data = await rootBundle.load(join('assets', _databaseName));
-      List<int> bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      List<int> bytes = data.buffer.asUint8List(
+          data.offsetInBytes, data.lengthInBytes);
 
       // write the copied database to the document to the document directory
       await File(path).writeAsBytes(bytes);
@@ -85,11 +86,10 @@ class DatabaseHelper {
       transaction,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
-
   }
 
   // Retrieve data from Transaction table
-  Future<List<Map<String, dynamic>>> getTransaction() async{
+  Future<List<Map<String, dynamic>>> getTransaction() async {
     final db = await DatabaseHelper().database;
     return await db.query('Transactions');
   }
@@ -97,7 +97,8 @@ class DatabaseHelper {
 
   // update data in Transaction table
 
- Future<void> updateTransaction(int id, Map<String,dynamic> updateTransaction) async {
+  Future<void> updateTransaction(int id,
+      Map<String, dynamic> updateTransaction) async {
     final db = await DatabaseHelper().database;
 
     await db.update(
@@ -106,9 +107,9 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
- }
+  }
 
- // delete data from Transactions table
+  // delete data from Transactions table
 
   Future<void> deleteTransaction(int id) async {
     final db = await DatabaseHelper().database;
@@ -132,13 +133,15 @@ class DatabaseHelper {
   }
 
   // Retrieve data from Categories table
-  Future<List<Map<String, dynamic>>> getCategory() async{
+  Future<List<Map<String, dynamic>>> getCategory() async {
     final db = await DatabaseHelper().database;
     return await db.query('Categories');
   }
+
   // update data in Categories table
 
-  Future<void> updateCategory(int id, Map<String,dynamic> updateCategory) async {
+  Future<void> updateCategory(int id,
+      Map<String, dynamic> updateCategory) async {
     final db = await DatabaseHelper().database;
 
     await db.update(
@@ -164,7 +167,7 @@ class DatabaseHelper {
 
   // insert data to Goals table
 
-  Future<void> insertGoal(Map<String, dynamic> goal) async{
+  Future<void> insertGoal(Map<String, dynamic> goal) async {
     final db = await DatabaseHelper().database;
 
     await db.insert(
@@ -175,14 +178,14 @@ class DatabaseHelper {
   }
 
   // Retrieve data from Goals table
-  Future<List<Map<String, dynamic>>> getGoal() async{
+  Future<List<Map<String, dynamic>>> getGoal() async {
     final db = await DatabaseHelper().database;
     return await db.query('Goals');
   }
 
   // update data in Goals table
 
-  Future<void> updateGoal(int id, Map<String,dynamic> updateGoal) async {
+  Future<void> updateGoal(int id, Map<String, dynamic> updateGoal) async {
     final db = await DatabaseHelper().database;
 
     await db.update(
@@ -206,7 +209,6 @@ class DatabaseHelper {
   }
 
 
-
   // Queries for dashboard data
   // to get total income for current month
 
@@ -218,32 +220,192 @@ class DatabaseHelper {
     FROM Transactions t 
     JOIN Categories c ON t.category_id = c.category_id
     WHERE c.type = 'Income'
-    AND substr(t.date,4,2) = strftime('09')
+    AND substr(t.date,4,2) = strftime('10')
     AND substr(t.date,7,4) = strftime('2024');
     ''');
     // Parse the result
-
-    for(var i in result){
-      print(i);
-    }
     double totalIncome = result[0]['total_income'] != null
         ? double.tryParse(result[0]['total_income'].toString()) ?? 0.0
         : 0.0;
-     return totalIncome;
-
+    return totalIncome;
   }
 
   // to get total expenses for the current month
 
-  // Future<double> getTotalExpensesForCurrentMonth() async{
-  //   final db = await DatabaseHelper().database;
-  //
-  //   var result = await db.rawQuery('''
-  //   SELECT SUM(t.amount)
-  //   ''');
-  // }
+  Future<double> getTotalExpensesForCurrentMonth() async {
+    final db = await DatabaseHelper().database;
+
+    var result = await db.rawQuery('''
+    SELECT SUM(t.amount) AS total_expenses
+    FROM Transactions t
+    JOIN Categories c ON t.category_id = c.category_id
+    WHERE c.type = 'Expense'
+    AND substr(t.date,4,2) = strftime('10')
+    AND substr(t.date,7,4) = strftime('2024');
+    ''');
+    double totalExpenses = result[0]['total_expenses'] != null
+        ? double.tryParse(result[0]['total_expenses'].toString()) ?? 0.0 : 0.0;
+    return totalExpenses;
+  }
+
+  // Retrieve last 5 transaction details
+
+  Future<List<Map<String, dynamic>>> getLastFiveTransactions() async {
+    final db = await DatabaseHelper().database;
+    var result = await db.rawQuery('''
+    SELECT C.category_name,
+    C.subcategory_name,
+    T.date,
+    T.amount,
+    C.type,
+	  T.notes
+    FROM Transactions T 
+    JOIN Categories C 
+    ON T.category_id = C.category_id
+	WHERE date('now') >= date(substr(T.date,7,4) || '-' || substr(T.date,4,2) || '-' || substr(T.date,1,2))
+	ORDER By date(substr(T.date,7,4) || '-' || substr(T.date,4,2) || '-' || substr(T.date,1,2)) DESC 
+	Limit 5;
+    ''');
+    return result;
+  }
+
+  // Query for Transactions_Screen data
+  // This Month Transaction
+  Future<List<Map<String, dynamic>>> getThisMonthTransactions() async {
+    final db = await DatabaseHelper().database;
+    var result = await db.rawQuery('''
+    SELECT C.category_name,
+    C.subcategory_name,
+    T.date,
+    T.amount,
+    C.type,
+    T.notes
+    FROM Transactions T 
+    JOIN Categories C 
+    ON T.category_id = C.category_id
+	  WHERE strftime('%Y-%m', date('now')) = 
+	  strftime('%Y-%m', substr(T.date,7,4) || '-' || substr(T.date,4,2) || '-01')
+	  ORDER By date(substr(T.date,7,4) || '-' || substr(T.date,4,2) || '-' || substr(T.date,1,2)) DESC ;
+    ''');
+
+    return result;
+  }
+
+  // Last Month Transaction
+  Future<List<Map<String, dynamic>>> getLastMonthTransactions() async {
+    final db = await DatabaseHelper().database;
+    var result = await db.rawQuery('''
+    SELECT C.category_name,
+    C.subcategory_name,
+    T.date,
+    T.amount,
+    C.type,
+    T.notes
+    FROM Transactions T 
+    JOIN Categories C 
+    ON T.category_id = C.category_id
+	  WHERE strftime('%Y-%m', date('now','-1 month')) = 
+	  strftime('%Y-%m', substr(T.date,7,4) || '-' || substr(T.date,4,2) || '-01')
+	  ORDER By date(substr(T.date,7,4) || '-' || substr(T.date,4,2) || '-' || substr(T.date,1,2)) DESC ;
+    ''');
+
+    return result;
+  }
+
+  // Last 6 Month Transaction
+  Future<List<Map<String, dynamic>>> getLastSixMonthTransactions() async {
+    final db = await DatabaseHelper().database;
+    var result = await db.rawQuery('''
+    SELECT C.category_name,
+    C.subcategory_name,
+    T.date,
+    T.amount,
+    C.type,
+    T.notes
+    FROM Transactions T 
+    JOIN Categories C 
+    ON T.category_id = C.category_id
+	  WHERE date(substr(T.date,7,4) || '-' || substr(T.date,4,2) || '-' || substr(T.date,1,2)) >= date('now', '-6 months')
+	  ORDER By date(substr(T.date,7,4) || '-' || substr(T.date,4,2) || '-' || substr(T.date,1,2)) DESC ;
+    ''');
+
+    return result;
+  }
+
+  // Query for the GoalScreen
+  // for Active Goals
+
+  Future<List<Map<String, dynamic>>> getActiveGoals() async {
+    final db = await DatabaseHelper().database;
+    var result = await db.rawQuery('''
+    SELECT 
+    goal_id,
+    title,
+    target_amount,
+    current_savings,
+    start_date,
+    end_date,
+    status,
+    (current_savings / target_amount) AS progress
+    FROM Goals
+    WHERE status = 'In Progress'
+    ORDER BY progress DESC;
+    ''');
+
+    return result;
+  }
+
+  // for Completed Goals
+
+  Future<List<Map<String, dynamic>>> getCompletedGoals() async {
+    final db = await DatabaseHelper().database;
+    var result = await db.rawQuery('''
+    SELECT 
+    goal_id,
+    title,
+    target_amount,
+    current_savings,
+    start_date,
+    end_date,
+    status,
+    (current_savings / target_amount) AS progress
+    FROM Goals
+    WHERE status = 'Completed'
+    ORDER BY progress DESC;
+    ''');
+
+    return result;
+  }
+
+  // to get the All Goals
+
+  Future<List<Map<String, dynamic>>> getAllGoals() async {
+    final db = await DatabaseHelper().database;
+    var result = await db.rawQuery('''
+    SELECT 
+    goal_id,
+    title,
+    target_amount,
+    current_savings,
+    start_date,
+    end_date,
+    status,
+    (current_savings / target_amount) AS progress
+    FROM Goals
+    ORDER BY progress DESC;
+    ''');
+
+    return result;
+  }
+
+
+
+
+
 
 
 }
+
+
 
 
